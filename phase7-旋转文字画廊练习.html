@@ -45,7 +45,7 @@ controls.autoRotate = true;
 controls.autoRotateSpeed = 0.5;
 controls.update();
 //诗句和Canvas
-//第一面墙和诗句
+//诗句初始化
 const TEXT1 = '春江潮水连海平，海上明月共潮生。'
   + '滟滟随波千万里，何处春江无月明。'
   + '江流宛转绕芳甸，月照花林皆似霰。'
@@ -66,6 +66,38 @@ const TEXTS = [TEXT1, TEXT2, TEXT3, TEXT4];
 const FONT = '20px "Hack Nerd Font Mono", monospace';
 const TEXT_W = 420;
 const LINE_H = 34;
+//诗句转换为Canvas纹理
+function makeTextTexture(text) {
+  // 1. Pretext 分行
+const prepared = prepareWithSegments(text, FONT);
+const { lines } = layoutWithLines(prepared, TEXT_W, LINE_H);
+  // 2. 创建 Canvas（512×512 或其他尺寸）
+const canvas = document.createElement('canvas');
+canvas.width = 512;
+canvas.height = 512;
+const ctx = canvas.getContext('2d');
+  // 3. 画背景、边框
+ctx.fillStyle = '#1a1a2e';
+ctx.fillRect(0, 0, 512, 512);
+ctx.strokeStyle = '#4a4a6a';
+ctx.lineWidth = 4;
+ctx.strokeRect(10, 10, 492, 492);
+
+  // 4. 遍历 lines 画文字
+ctx.fillStyle = '#e0e0ff';
+ctx.font = FONT;
+ctx.textBaseline = 'top';
+let y = 40;
+for (const line of lines) {
+  for (const seg of line) {
+    ctx.fillText(seg.text, 30 + seg.x, y);
+  }
+  y += LINE_H;
+}
+  // 5. 返回 new THREE.CanvasTexture(canvas)
+return new THREE.CanvasTexture(canvas);
+}
+const textTextures = TEXTS.map(makeTextTexture);
 
 // 灯光
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
