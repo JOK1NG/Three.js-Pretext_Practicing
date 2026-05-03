@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第八阶段 · 文字瀑布</title>
+</head>
+<style>
+    * { margin: 0; padding: 0; }
+    body { background: #FFFFFF; overflow: hidden; }
+    canvas { display: block; }
+</style>
+<body>
+    
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// 场景
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#FFFFFF');
+
+// 相机
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 5);
+camera.lookAt(0, 0, 0);
+
+// 渲染器
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// 控制
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+//构建PlaneGeometry
+const geometry = new THREE.PlaneGeometry(10, 10, 4, 4);
+const positions = geometry.attributes.position;
+for (let i = 0; i < positions.count; i++) {
+  const x = positions.getX(i);  // 读取 x
+  const y = positions.getY(i);  // 读取 y
+  const z = positions.getZ(i);  // 读取 z（现在是 0）
+  // 用 sin/cos 生成一个"波浪"高度
+  const height = Math.sin(x * 0.5) * Math.cos(y * 0.3) * 1.5;
+  positions.setZ(i, height);  // 把 z 改成这个高度
+}
+geometry.computeVertexNormals();
+//灯光
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+directionalLight.position.set(5, 10, 5);
+scene.add(directionalLight);
+// PlaneGeometry 默认朝上（面向 z 轴正方向）
+// 但我们的场景里，"上"是 y 轴
+// 所以要旋转一下，让它变成水平的地面
+const material = new THREE.MeshStandardMaterial({
+  color: 0xD8FFEF,      // 浅绿色，像山丘
+  wireframe: false,      // 先用实体看效果
+  flatShading: true,     // 用平面着色，能看到每个三角面，更有地形感
+});
+const terrain = new THREE.Mesh(geometry, material);
+terrain.rotation.x = -Math.PI / 2;  // 旋转 90 度，让它变成水平的
+scene.add(terrain);
+// 1. 创建一个方块
+const boxGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
+const boxMat = new THREE.MeshBasicMaterial({ color: 0xff4444 });
+const box = new THREE.Mesh(boxGeo, boxMat);
+box.position.set(0, 5, 0);  // 从高处开始
+scene.add(box);
+// 2. 物理变量
+let velocity = 0;        // 下落速度
+const gravity = -0.005;   // 重力加速度
+const raycaster = new THREE.Raycaster();
+const down = new THREE.Vector3(0, -1, 0);  // 向下的方向
+
+// 四个角相对于中心的偏移
+const halfSize = 0.15;  // 方块尺寸的一半
+const corners = [
+    new THREE.Vector3(-halfSize, 0, -halfSize),  // 左上
+    new THREE.Vector3( halfSize, 0, -halfSize),  // 右上
+    new THREE.Vector3(-halfSize, 0,  halfSize),  // 左下
+    new THREE.Vector3( halfSize, 0,  halfSize),  // 右下
+];
+
+// 渲染循环
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    
+    // 更新方块位置
+    velocity += gravity;
+    box.position.y += velocity;
+    
+    // 四条射线碰撞检测
+    let maxHitY = -Infinity;
+    
+    for (const corner of corners) {
+        // 射线起点 = 方块位置 + 角的偏移
+        const origin = box.position.clone().add(corner);
+        raycaster.set(origin, down);
+        
+        const intersects = raycaster.intersectObject(terrain);
+        if (intersects.length > 0) {
+            const hitY = intersects[0].point.y;
+            if (hitY > maxHitY) {
+                maxHitY = hitY;
+            }
+        }
+    }
+    
+    // 如果有碰撞，方块站到最高的那个点上
+    if (maxHitY > -Infinity) {
+        if (box.position.y < maxHitY + 0.15) {
+            box.position.y = maxHitY + 0.15;
+            velocity = -velocity * 0.5;
+        }
+    }
+    
+    // 渲染
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
