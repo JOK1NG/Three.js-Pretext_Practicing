@@ -28,16 +28,18 @@ import { prepareWithSegments, layoutWithLines }
 // ----- 场景 -----
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#0d0d1a');
-
+// 相机设置
 const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 50);
 camera.position.set(0, 0.5, 5);
 camera.lookAt(0, 0, 0);
 
+// 渲染器设置
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(innerWidth, innerHeight);
 renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 document.body.appendChild(renderer.domElement);
 
+// 控制设置
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;

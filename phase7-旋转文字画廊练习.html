@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>第七阶段 · 旋转文字画廊练习</title>
+</head>
+<style>
+    * { margin: 0; padding: 0; }
+    body { background: #0d0d1a; overflow: hidden; }
+    canvas { display: block; }
+</style>
+<body>
+    
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { prepareWithSegments, layoutWithLines }
+  from 'https://esm.sh/@chenglou/pretext@0.0.6';
+// 场景
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0d0d1a');
+// 相机
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 5);
+camera.lookAt(0, 0, 0);
+// 渲染器
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+// 控制
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+controls.update();
+//诗句和Canvas
+//第一面墙和诗句
+const TEXT1 = '春江潮水连海平，海上明月共潮生。'
+  + '滟滟随波千万里，何处春江无月明。'
+  + '江流宛转绕芳甸，月照花林皆似霰。'
+  + '空里流霜不觉飞，汀上白沙看不见。';
+const TEXT2 = '江天一色无纤尘，皎皎空中孤月轮。'
+  + '江畔何人初见月？江月何年初照人？'
+  + '人生代代无穷已，江月年年只相似。'
+  + '不知江月待何人，但见长江送流水。';
+const TEXT3 = '白云一片去悠悠，青枫浦上不胜愁。'
+  + '谁家今夜扁舟子？何处相思明月楼？'
+  + '可怜楼上月徘徊，应照离人妆镜台。'
+  + '玉户帘中卷不去，捣衣砧上拂还来。';
+const TEXT4 = '此时相望不相闻，愿逐月华流照君。'
+  + '鸿雁长飞光不度，鱼龙潜跃水成文。'
+  + '昨夜闲潭梦落花，可怜春半不还家。'
+  + '江水流春去欲尽，江潭落月复西斜。';
+const TEXTS = [TEXT1, TEXT2, TEXT3, TEXT4];
+const FONT = '20px "Hack Nerd Font Mono", monospace';
+const TEXT_W = 420;
+const LINE_H = 34;
+
+// 灯光
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+scene.add(directionalLight);
+// 渲染循环
+function animate() {
+  requestAnimationFrame(animate);
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
