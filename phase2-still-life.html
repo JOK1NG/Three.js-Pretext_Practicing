@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>第二阶段 · 静物台</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                background: #0d0d1a;
+                overflow: hidden;
+            }
+            canvas {
+                display: block;
+            }
+            #hint {
+                position: fixed;
+                bottom: 28px;
+                left: 50%;
+                transform: translateX(-50%);
+                color: rgba(255, 255, 255, 0.35);
+                font-size: 13px;
+                pointer-events: none;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="hint">左键旋转 · 滚轮缩放 · 右键平移</div>
+
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                }
+            }
+        </script>
+
+        <script type="module">
+            import * as THREE from "three";
+            import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+            // ----- 场景 -----
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color("#fffff");
+
+            const camera = new THREE.PerspectiveCamera(
+                45,
+                innerWidth / innerHeight,
+                0.1,
+                100,
+            );
+            camera.position.set(5, 4, 8);
+            camera.lookAt(0, 0.4, 0);
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(innerWidth, innerHeight);
+            renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true; // 开阴影，多了真实感
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            document.body.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.target.set(0, 0.4, 0);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.08;
+            controls.enableZoom = true;
+            controls.zoomSpeed = 10; // 缩放灵敏度，触控板双指放大缩小
+            controls.minDistance = 2; // 最近能拉多近
+            controls.maxDistance = 20; // 最远能推多远
+            controls.update();
+
+            // --- macOS 触控板双指缩放兼容（Safari 用 gesture 事件）---
+            let gestureStartDist = 0;
+            renderer.domElement.addEventListener("gesturestart", (e) => {
+                e.preventDefault();
+                gestureStartDist = camera.position.distanceTo(controls.target);
+            });
+            renderer.domElement.addEventListener("gesturechange", (e) => {
+                e.preventDefault();
+                const scale = gestureStartDist / e.scale;
+                camera.position.lerpVectors(
+                    controls.target,
+                    camera.position,
+                    scale / camera.position.distanceTo(controls.target),
+                );
+            });
+            renderer.domElement.addEventListener("gestureend", (e) => {
+                e.preventDefault();
+            });
+
+            // ----- 地面（接收阴影）-----
+            const floorGeo = new THREE.PlaneGeometry(12, 12);
+            const floorMat = new THREE.MeshStandardMaterial({
+                color: "#1a1a30",
+                roughness: 0.9,
+            });
+            const floor = new THREE.Mesh(floorGeo, floorMat);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.y = -1.6;
+            floor.receiveShadow = true;
+            scene.add(floor);
+
+            // ----- 台座 -----
+            const pedestalGeo = new THREE.CylinderGeometry(1.8, 2.0, 0.3, 48);
+            const pedestalMat = new THREE.MeshStandardMaterial({
+                color: "#2a2a3a",
+                roughness: 0.5,
+                metalness: 0.3,
+            });
+            const pedestal = new THREE.Mesh(pedestalGeo, pedestalMat);
+            pedestal.position.y = -1.45;
+            pedestal.castShadow = true;
+            pedestal.receiveShadow = true;
+            scene.add(pedestal);
+
+            // ============================================================
+            // 三个静物
+            // ============================================================
+
+            // ① 金属球（中间）
+            const sphereGeo = new THREE.SphereGeometry(0.55, 48, 48);
+            const sphereMat = new THREE.MeshStandardMaterial({
+                color: "#c0a0ff", // 淡紫色
+                roughness: 0.15, // 低粗糙度 = 光滑，高光清晰
+                metalness: 0.85, // 高金属度 = 像镀铬球
+                wireframe: true,
+            });
+            const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+            sphere.position.set(0, 0.2, 0);
+            sphere.castShadow = true;
+            scene.add(sphere);
+
+            // ② 粗糙方块（左边）
+            const boxGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+            const boxMat = new THREE.MeshStandardMaterial({
+                color: "#e07040", // 陶土色
+                roughness: 0.8, // 高粗糙度 = 哑光，高光散开
+                wireframe: true,
+                metalness: 0.0, // 非金属
+            });
+            const box = new THREE.Mesh(boxGeo, boxMat);
+            box.position.set(-1.5, 0.1, 0);
+            box.rotation.y = 0.4; // 稍微转一点，显得自然
+            box.castShadow = true;
+            scene.add(box);
+
+            // ③ 甜甜圈（右边）
+            const torusGeo = new THREE.TorusGeometry(0.45, 0.18, 32, 48);
+            const torusMat = new THREE.MeshStandardMaterial({
+                color: "#50c0a0", // 青绿色
+                roughness: 0.3,
+                metalness: 0.4,
+                wireframe: true,
+            });
+            const torus = new THREE.Mesh(torusGeo, torusMat);
+            torus.position.set(1.5, 0.3, 0);
+            torus.castShadow = true;
+            scene.add(torus);
+
+            // ============================================================
+            // 三盏灯（不同颜色、不同位置）
+            // ============================================================
+
+            // 主灯 = 暖白，从右上方打（模拟台灯）
+            const keyLight = new THREE.DirectionalLight("#ffe8d0", 10);
+            keyLight.position.set(5, 8, 4);
+            keyLight.castShadow = true;
+            keyLight.shadow.mapSize.set(1024, 1024);
+            keyLight.shadow.camera.near = 0.5;
+            keyLight.shadow.camera.far = 30;
+            keyLight.shadow.camera.left = -6;
+            keyLight.shadow.camera.right = 6;
+            keyLight.shadow.camera.top = 6;
+            keyLight.shadow.camera.bottom = -6;
+            scene.add(keyLight);
+            //主灯标记
+            const keyLightMarker = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1),
+                new THREE.MeshBasicMaterial({ color: "#ffe8d0" }),
+            );
+            keyLightMarker.position.set(5, 8, 4);
+            scene.add(keyLightMarker);
+
+            // 补光 = 冷蓝，从左后方（勾边，让暗面不完全黑）
+            const fillLight = new THREE.PointLight("#ff4040", 25, 15);
+            fillLight.position.set(-4, 2, -3);
+            scene.add(fillLight);
+
+            // 补光标记
+            const fillLightMarker = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1),
+                new THREE.MeshBasicMaterial({ color: "#ff4040" }),
+            );
+            fillLightMarker.position.set(-4, 2, -3);
+            scene.add(fillLightMarker);
+
+            // 底光 = 暖橙，从下方（给甜甜圈的洞和方块底面一点暖色）
+            const rimLight = new THREE.PointLight("#ff9060", 15, 8);
+            rimLight.position.set(0, 6, 2);
+            scene.add(rimLight);
+
+            // 底光标记
+            const rimLightMarker = new THREE.Mesh(
+                new THREE.SphereGeometry(0.1),
+                new THREE.MeshBasicMaterial({ color: "#ff9060" }),
+            );
+            rimLightMarker.position.set(0, 6, 2);
+            scene.add(rimLightMarker);
+
+            // 环境光 = 微弱的紫色，让阴影区有颜色倾向而不是死黑
+            scene.add(new THREE.AmbientLight("#202040", 10));
+
+            // ----- 动画 -----
+            function animate() {
+                requestAnimationFrame(animate);
+
+                // 三个物体各自慢悠悠地转
+                sphere.rotation.y += 0.008;
+                sphere.rotation.x += 0.003;
+                box.rotation.y += 0.008;
+                box.rotation.x += 0.003;
+                torus.rotation.x += 0.01;
+                torus.rotation.y += 0.006;
+
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // ----- 窗口自适应 -----
+            window.addEventListener("resize", () => {
+                camera.aspect = innerWidth / innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(innerWidth, innerHeight);
+            });
+        </script>
+    </body>
+</html>

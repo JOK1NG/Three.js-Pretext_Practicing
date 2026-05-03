@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第六阶段 · 旋转文字卡片</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { background: #0d0d1a; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { prepareWithSegments, layoutWithLines }
+  from 'https://esm.sh/@chenglou/pretext@0.0.6';
+
+// ----- 场景 -----
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0d0d1a');
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 50);
+camera.position.set(0, 0.5, 5);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.5;
+controls.update();
+
+// ----- 诗（Pretext 分行）-----
+const TEXT = '春江潮水连海平，海上明月共潮生。'
+  + '滟滟随波千万里，何处春江无月明。'
+  + '江流宛转绕芳甸，月照花林皆似霰。'
+  + '空里流霜不觉飞，汀上白沙看不见。';
+
+const FONT = '20px "Hack Nerd Font Mono", "Noto Serif CJK SC", serif';
+const LINE_H = 34;
+const TEXT_W = 420;
+
+const prepared = prepareWithSegments(TEXT, FONT);
+const { lines } = layoutWithLines(prepared, TEXT_W, LINE_H);
+
+console.log('共', lines.length, '行');
+
+// ============================================================
+// TODO：把诗句画到 Canvas 上，贴到 3D 平面上
+// ============================================================
+//
+// 步骤：
+//   1. 创建一个 Canvas，宽 512，高 512
+//   2. 画背景（深色，带一点渐变更好看）
+//   3. 画一个装饰边框（线条）
+//   4. 遍历 lines，逐行把文字画上去
+//      - 字体和 Pretext 里的一致
+//      - 居中放置（计算偏移量）
+//   5. 用 CanvasTexture 转成纹理
+//   6. 创建 PlaneGeometry，贴上纹理
+//   7. scene.add()
+//
+// 提示：
+//   - ctx.fillStyle = '颜色'      → 设置填充色
+//   - ctx.strokeStyle = '颜色'    → 设置描边色
+//   - ctx.fillRect(x, y, w, h)   → 画矩形
+//   - ctx.strokeRect(x, y, w, h) → 画矩形边框
+//   - ctx.fillText(文字, x, y)   → 画文字（y 是基线位置）
+//   - canvas 尺寸和 PlaneGeometry 宽高比要匹配，不然纹理会拉伸
+//   - PlaneGeometry 默认是竖着的（XY 平面），卡片的正常朝向就好
+//
+// ============================================================
+
+// 👇 在这里写你的代码 👇
+
+const canvas = document.createElement('canvas');
+canvas.width = 512;
+canvas.height = 512;
+const ctx = canvas.getContext('2d');
+
+// 1. 画背景
+// 2. 画边框
+// 3. 画文字（遍历 lines）
+// 4. 创建纹理
+// 5. 创建平面 + 材质 + mesh
+// 6. scene.add()
+ctx.fillStyle = '#6F6FD1';
+ctx.strokeStyle = '#4A4A9E';
+ctx.fillRect(0, 0, 512, 512);
+ctx.strokeRect(16, 16, 480, 480);
+ctx.lineWidth = 2;
+ctx.lineJoin = 'round';
+
+ctx.font = FONT;
+ctx.fillStyle = '#e0d8c8';
+ctx.textBaseline = 'top';
+const START_X = 46;
+const START_Y = 55;
+// 遍历 lines，逐行画文字
+for (let i = 0; i < lines.length; i++) {
+  const line = lines[i];
+  ctx.fillText(line.text, START_X, START_Y + i * LINE_H);
+}
+
+// 4. 创建纹理
+const texture = new THREE.CanvasTexture(canvas);
+texture.colorSpace = THREE.SRGBColorSpace;
+// 5. 创建平面 + 材质 + mesh
+const planetGeometry = new THREE.PlaneGeometry(3, 3);
+const planetMaterial = new THREE.MeshBasicMaterial({ map: texture, side: THREE.DoubleSide });
+const planetMesh = new THREE.Mesh(planetGeometry, planetMaterial);
+scene.add(planetMesh);
+// 👆 在这里写你的代码 👆
+
+// ----- 光照（可选，如果用 MeshBasicMaterial 就不需要）-----
+scene.add(new THREE.AmbientLight('#ffffff', 1));
+
+// ----- 动画 -----
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+</script>
+</body>
+</html>
+

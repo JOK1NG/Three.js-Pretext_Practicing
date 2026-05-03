@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>第一阶段：旋转方块</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+            }
+            body {
+                background: #1a1a2e;
+                overflow: hidden;
+            }
+            canvas {
+                display: block;
+            }
+        </style>
+    </head>
+    <body>
+        <!--
+  ============================================
+  第一阶段：Three.js 四大核心对象
+  Scene / Camera / Renderer / Mesh
+  ============================================
+
+  概念速记：
+  Scene   = 空房间，你要往里放东西
+  Camera  = 你的眼睛，决定看到什么
+  Renderer = 照相机，把房间拍成屏幕上的像素
+  Mesh    = 房间里的一个东西（形状 + 材质）
+
+  类比：你在一个黑房间里放了一个红色方块，
+  你站在门口（相机位置）往里看，
+  用手机拍照（渲染器）把画面显示在屏幕上。
+-->
+
+        <!-- ===== 步骤 1：引入 Three.js（已写好，不用改） ===== -->
+        <script type="importmap">
+            {
+                "imports": {
+                    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+                }
+            }
+        </script>
+
+        <script type="module">
+            // ===== 步骤 2：导入（已写好） =====
+            import * as THREE from "three";
+            import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+            // ===== 步骤 3：创建场景、相机、渲染器（已写好） =====
+
+            // Scene：空房间
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color("#1a1a2e"); // 深蓝紫背景色
+
+            // Camera：你的眼睛
+            // 参数：视野角度(度), 宽高比, 近裁面, 远裁面
+            // 50 度视野 ≈ 人眼自然视角
+            const camera = new THREE.PerspectiveCamera(
+                50, // 视野角度
+                window.innerWidth / window.innerHeight, // 宽高比（铺满窗口）
+                0.1, // 近裁面：比这更近的看不见
+                100, // 远裁面：比这更远的看不见
+            );
+            camera.position.set(3, 2, 5); // 相机放在 (x=3, y=2, z=5) 的位置
+            camera.lookAt(0, 0, 0); // 相机看向原点
+
+            // Renderer：把场景拍成像素
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight); // 铺满窗口
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); // 限制像素比，省性能
+            document.body.appendChild(renderer.domElement); // 把 canvas 加到页面上
+
+            // OrbitControls：鼠标拖拽旋转/缩放（已写好）
+            const controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; // 开启惯性
+            controls.dampingFactor = 0.08; // 惯性大小
+
+            // ================================================================
+            // TODO 1：创建一个立方体（约 4 行代码）
+            // ================================================================
+            //
+            // Mesh = Geometry（形状） + Material（材质）
+            //
+            // Geometry 定义「长什么样」—— 是方块、球、还是圆柱
+            // Material 定义「表面长什么样」—— 什么颜色、光滑还是粗糙
+            //
+            // 你需要写：
+            //   1. const geometry = new THREE.BoxGeometry(宽, 高, 深);
+            //   2. const material = new THREE.MeshStandardMaterial({ color: 颜色 });
+            //   3. const cube = new THREE.Mesh(geometry, material);
+            //   4. scene.add(cube);
+            //
+            // 提示：BoxGeometry(1, 1, 1) 是边长 1 的正方体
+            //       颜色用 '#e94560'（红色）或你喜欢的任何颜色
+            //       MeshStandardMaterial 需要光照才能看到，所以下一步要加灯！
+
+            // 👇 在这里写你的代码 👇
+            const geometry = new THREE.BoxGeometry(1, 1, 1);
+            const material = new THREE.MeshStandardMaterial({
+                color: "#FFEA00",
+                transparent: true,
+                opacity: 0.5,
+            });
+            const cube = new THREE.Mesh(geometry, material);
+            scene.add(cube);
+
+            // 👆 在这里写你的代码 👆
+
+            // ================================================================
+            // TODO 2：加一盏灯（约 2 行代码）
+            // ================================================================
+            //
+            // MeshStandardMaterial 是 PBR 材质，需要光照！
+            // 没有灯的话方块会是纯黑的。
+            //
+            // 你需要写：
+            //   1. const light = new THREE.PointLight(颜色, 亮度, 照射距离);
+            //   2. light.position.set(x, y, z);
+            //   3. scene.add(light);
+            //
+            // 提示：PointLight 像灯泡，向四面八方发光
+            //       PointLight('#ffffff', 50, 20) 是一盏白色灯，亮度 50，照 20 单位远
+            //       位置放高一点 (3, 4, 3) 可以照到方块正面和上面
+
+            // 👇 在这里写你的代码 👇
+            const light = new THREE.PointLight("#ffffff", 50, 20);
+            light.position.set(3, 4, 3);
+            scene.add(light);
+
+            // 👆 在这里写你的代码 👆
+
+            // ================================================================
+            // TODO 3：写动画循环（约 5 行代码）
+            // ================================================================
+            //
+            // requestAnimationFrame(animate) 让浏览器每帧调用一次 animate 函数
+            // 通常 60fps，即每秒 60 次
+            //
+            // 你需要写：
+            //   1. function animate() {
+            //   2.   requestAnimationFrame(animate);  // 注册下一帧
+            //   3.   cube.rotation.x += 0.01;          // 绕 X 轴旋转
+            //   4.   cube.rotation.y += 0.01;          // 绕 Y 轴旋转
+            //   5.   controls.update();                // 更新 OrbitControls
+            //   6.   renderer.render(scene, camera);   // 渲染这一帧
+            //   7. }
+            //   8. animate();  // 启动动画循环
+            //
+            // 提示：rotation.x 绕 X 轴（水平轴）旋转
+            //       rotation.y 绕 Y 轴（竖直轴）旋转
+            //       0.01 弧度 ≈ 0.57 度/帧，60fps 下约 34 度/秒
+
+            // 👇 在这里写你的代码 👇
+            function animate() {
+                requestAnimationFrame(animate);
+                cube.rotation.x += 0.01;
+                cube.rotation.y += 0.01;
+                controls.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            // 👆 在这里写你的代码 👆
+
+            // ================================================================
+            // TODO 4（可选挑战）：窗口大小变化时自适应（约 4 行代码）
+            // ================================================================
+            //
+            // 当用户缩放浏览器窗口时，相机和渲染器需要跟着调整，
+            // 否则画面会被拉伸或裁切。
+            //
+            // 你需要写：
+            //   window.addEventListener('resize', () => {
+            //     camera.aspect = window.innerWidth / window.innerHeight;
+            //     camera.updateProjectionMatrix();
+            //     renderer.setSize(window.innerWidth, window.innerHeight);
+            //   });
+            //
+            // 解释：
+            //   camera.aspect = 宽高比（必须和渲染器一致）
+            //   camera.updateProjectionMatrix() = 通知相机「参数变了，重新算」
+            //   renderer.setSize() = 通知渲染器「画布大小变了」
+
+            // 👇 在这里写你的代码 👇
+            window.addEventListener("resize", () => {
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+
+            // 👆 在这里写你的代码 👆
+        </script>
+    </body>
+</html>

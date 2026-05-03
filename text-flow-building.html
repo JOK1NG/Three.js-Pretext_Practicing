@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>文字繞建築 · Text Flow</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { overflow: hidden; background: #080712; font-family: system-ui, sans-serif; }
+    .container { position: relative; width: 100vw; height: 100vh; }
+    #textCanvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 0; display: block;
+    }
+    #threeCanvas {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: 1; display: block;
+    }
+    #info {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      color: rgba(232,213,183,0.2); font-size: 12px; text-align: center;
+      pointer-events: none; z-index: 2; letter-spacing: 0.5px;
+    }
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: rgba(232,213,183,0.3); font-size: 14px; letter-spacing: 4px;
+      background: #080712; z-index: 10; transition: opacity 0.8s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="loading">✦ 砌 築 文 字 河 流 ✦</div>
+<div class="container">
+  <canvas id="textCanvas"></canvas>
+  <canvas id="threeCanvas"></canvas>
+</div>
+<div id="info">🖱 拖曳旋轉視角 · 自動旋轉中 · 文字隨建築輪廓繞流</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { prepareWithSegments, layoutNextLineRange, materializeLineRange } from 'https://esm.sh/@chenglou/pretext@0.0.6';
+
+// ═══════════════════════════════════════════════════════
+//  TEXT CORPUS — long passage about the temple of words
+// ═══════════════════════════════════════════════════════
+
+const TEXT = [
+  'TEMPLE OF WORDS  文字之殿',
+  '',
+  'It is written that before the first stone was laid, there was only silence.',
+  'Then came a single word, and the word became a foundation.',
+  'Another word became a wall, and another a window facing east.',
+  'Thus the temple was built not by hands but by breath,',
+  'not by mortar but by meaning.',
+  '',
+  '它的地基不是岩石，而是句子。',
+  '它的牆壁不是磚塊，而是段落。',
+  '每一根柱子都是一首詩。',
+  '每一扇窗都是一個比喻。',
+  '這座建築不生不滅，因為語言永遠不會倒塌。',
+  '',
+  'The architects were poets who understood that weight',
+  'is not measured in tons but in truth.',
+  'The engineers were storytellers who knew that the strongest beam',
+  'is a well-placed verb.',
+  'The workers were readers, each one carrying a syllable',
+  'like a stone to the site.',
+  '',
+  'In the great hall, the ceiling is made of questions.',
+  'Each question is a skylight through which the stars are visible.',
+  'The floor is paved with answers, worn smooth by the feet',
+  'of those who walked before.',
+  '',
+  '走廊的盡頭總是有一道光，那是下一段文字的開頭。',
+  '樓梯的每一級都是一個章節的轉折。',
+  '你往上走，故事變得越來越輕，',
+  '直到你抵達屋頂，那裡只有一個字：光。',
+  '',
+  'There are no doors, only prepositions.',
+  'You enter through "once upon a time."',
+  'You leave through "forever after."',
+  'Between them lies the entire building.',
+  '',
+  'Each reader builds the temple anew.',
+  'The walls rearrange themselves according to who walks through them.',
+  'A sad reader finds corridors that turn inward.',
+  'A joyful reader finds windows opening onto gardens.',
+  'A curious reader finds staircases that lead to hidden rooms.',
+  '',
+  '這就是為什麼這座建築永遠不會完工，',
+  '也永遠不會被摧毀。',
+  '只要還有人在閱讀，它就還在生長。',
+  '每一代人都為它添上新的一翼，',
+  '新的塔樓，新的穹頂，新的地下墓穴。',
+  '',
+  'At night, the temple glows from within.',
+  'The words themselves emit a soft light,',
+  'like fireflies trapped between pages.',
+  'From a distance, it looks like a star that has descended',
+  'to rest upon the earth.',
+  '',
+  '走近一些，你會聽見低語。那是所有曾經在這裡被讀過的文字',
+  '在牆壁之間迴盪。彷彿建築本身在記憶。',
+  '它記得每一個讀者的呼吸，',
+  '每一次翻頁的聲音，',
+  '每一個被理解的瞬間。',
+  '',
+  'This is the temple that cannot be seen,',
+  'only read.',
+  'It stands at the center of every language,',
+  'at the intersection of every story.',
+  'It has no address, yet everyone has been there.',
+  '',
+  '因為文字之殿不在任何地方，卻又在所有地方。',
+  '它就建造在每一個閱讀的人心中。',
+  '你我此刻就在其中。',
+  '',
+  'And the building continues to rise.',
+  'Word by word. Page by page.',
+  'Reader by reader.',
+  '',
+  '文字之殿  生生不息',
+].join('\n');
+
+// ═══════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════
+
+const FONT = '14px "Georgia", "Songti SC", "Noto Serif CJK SC", serif';
+const LINE_H = 21;
+const LAYOUT_THROTTLE_MS = 40;  // max reflow rate
+
+// Dynamic margins — computed per frame to match sphere size
+function getMargins(W, H) {
+  // Sphere radius 1.0, camera distance ~7
+  const sphereRadius = 1.0;
+  const FOV = THREE.MathUtils.degToRad(camera.fov);
+  const cameraDist = camera.position.distanceTo(new THREE.Vector3(0, 2.5, 0));
+  const sphereScreenDiam = (sphereRadius / cameraDist) * (H / Math.tan(FOV / 2)) * 2;
+  const boxWidth = sphereScreenDiam * 1.5; // slightly wider than sphere diameter
+  const margin = Math.max(40, (W - boxWidth) / 2);
+  return { left: margin, right: margin };
+}
+
+// ═══════════════════════════════════════════════════════
+//  DOM REFS
+// ═══════════════════════════════════════════════════════
+
+const textCanvas = document.getElementById('textCanvas');
+const tctx = textCanvas.getContext('2d');
+const threeCanvas = document.getElementById('threeCanvas');
+
+// ═══════════════════════════════════════════════════════
+//  THREE.JS — BUILDING
+// ═══════════════════════════════════════════════════════
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 100);
+camera.position.set(0, 2.5, 7);
+camera.lookAt(0, 1.5, 0);
+
+const renderer = new THREE.WebGLRenderer({
+  canvas: threeCanvas,
+  alpha: true,
+  antialias: true,
+});
+renderer.setSize(innerWidth, innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.7;
+
+// ── Controls ──
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 2.5, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 1.5;
+controls.minDistance = 3;
+controls.maxDistance = 15;
+controls.update();
+
+// ── Building construction ──
+const building = new THREE.Group();
+
+// Central glowing sphere
+const sphereMat = new THREE.MeshPhysicalMaterial({
+  color: 0x4488ff,
+  emissive: 0x2244aa,
+  emissiveIntensity: 0.2,
+  metalness: 0.3,
+  roughness: 0.1,
+  clearcoat: 0.5,
+  clearcoatRoughness: 0.2,
+});
+const sphere = new THREE.Mesh(new THREE.SphereGeometry(1.0, 48, 48), sphereMat);
+sphere.position.set(0, 2.5, 0);
+building.add(sphere);
+
+// Inner glow core
+const coreMat = new THREE.MeshPhysicalMaterial({
+  color: 0x88ccff,
+  emissive: 0x4488ff,
+  emissiveIntensity: 0.6,
+  transparent: true,
+  opacity: 0.3,
+});
+const core = new THREE.Mesh(new THREE.SphereGeometry(0.6, 32, 32), coreMat);
+core.position.set(0, 2.5, 0);
+building.add(core);
+
+// Outer wireframe shell
+const shellMat = new THREE.MeshPhysicalMaterial({
+  color: 0x88ddff,
+  emissive: 0x4488ff,
+  emissiveIntensity: 0.1,
+  wireframe: true,
+  transparent: true,
+  opacity: 0.2,
+});
+const shell = new THREE.Mesh(new THREE.SphereGeometry(1.15, 24, 18), shellMat);
+shell.position.set(0, 2.5, 0);
+building.add(shell);
+
+// Orbiting ring
+const ringPts = [];
+for (let i = 0; i <= 48; i++) {
+  const theta = (i / 48) * Math.PI * 2;
+  const r = 1.5;
+  ringPts.push(new THREE.Vector3(Math.cos(theta) * r, Math.sin(theta * 2) * 0.15, Math.sin(theta) * r));
+}
+const ringGeo = new THREE.BufferGeometry().setFromPoints(ringPts);
+const ringMat = new THREE.LineBasicMaterial({
+  color: 0x88ccff,
+  transparent: true,
+  opacity: 0.3,
+});
+const ring = new THREE.Line(ringGeo, ringMat);
+ring.position.set(0, 2.5, 0);
+building.add(ring);
+
+// Second ring (perpendicular)
+const ringPts2 = [];
+for (let i = 0; i <= 48; i++) {
+  const theta = (i / 48) * Math.PI * 2;
+  const r = 1.6;
+  ringPts2.push(new THREE.Vector3(Math.cos(theta) * r * 0.7, Math.sin(theta) * r, Math.cos(theta * 1.5) * r * 0.3));
+}
+const ringGeo2 = new THREE.BufferGeometry().setFromPoints(ringPts2);
+const ringMat2 = new THREE.LineBasicMaterial({
+  color: 0xff88cc,
+  transparent: true,
+  opacity: 0.2,
+});
+const ring2 = new THREE.Line(ringGeo2, ringMat2);
+ring2.position.set(0, 2.5, 0);
+building.add(ring2);
+
+// Glow base platform
+const baseMat = new THREE.MeshStandardMaterial({
+  color: 0x223355,
+  emissive: 0x112244,
+  emissiveIntensity: 0.15,
+  transparent: true,
+  opacity: 0.3,
+});
+const baseMesh = new THREE.Mesh(new THREE.CircleGeometry(1.3, 32), baseMat);
+baseMesh.rotation.x = -Math.PI / 2;
+baseMesh.position.set(0, 1.45, 0);
+building.add(baseMesh);
+
+// Particle dots orbiting
+const dotCount = 60;
+const dotPositions = new Float32Array(dotCount * 3);
+for (let i = 0; i < dotCount; i++) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const r = 1.3 + Math.random() * 0.8;
+  dotPositions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+  dotPositions[i * 3 + 1] = r * Math.cos(phi) + 2.5;
+  dotPositions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+}
+const dotGeo = new THREE.BufferGeometry();
+dotGeo.setAttribute('position', new THREE.BufferAttribute(dotPositions, 3));
+const dotMat = new THREE.PointsMaterial({
+  color: 0x88ccff,
+  size: 0.04,
+  transparent: true,
+  opacity: 0.5,
+  blending: THREE.AdditiveBlending,
+  depthWrite: false,
+});
+const dots = new THREE.Points(dotGeo, dotMat);
+building.add(dots);
+
+scene.add(building);
+
+// ── Lighting ──
+scene.add(new THREE.AmbientLight(0x333355, 0.3));
+const mainLight = new THREE.DirectionalLight(0xffd58a, 1.2);
+mainLight.position.set(3, 6, 4);
+scene.add(mainLight);
+const fillLight = new THREE.DirectionalLight(0x8866ff, 0.4);
+fillLight.position.set(-3, 2, -2);
+scene.add(fillLight);
+const rimLight = new THREE.DirectionalLight(0x4488ff, 0.3);
+rimLight.position.set(-1, 3, -5);
+scene.add(rimLight);
+
+// Soft ground glow ring
+const glowRingGeo = new THREE.RingGeometry(1.3, 2.8, 48);
+const glowRingMat = new THREE.MeshBasicMaterial({
+  color: 0x332211, transparent: true, opacity: 0.06,
+  side: THREE.DoubleSide, depthWrite: false,
+});
+const glowRing = new THREE.Mesh(glowRingGeo, glowRingMat);
+glowRing.rotation.x = -Math.PI / 2;
+glowRing.position.y = -0.08;
+scene.add(glowRing);
+
+// ── Collect building meshes for obstacle detection ──
+const buildingMeshes = [];
+building.traverse((child) => {
+  if (child.isMesh) buildingMeshes.push(child);
+});
+
+// ═══════════════════════════════════════════════════════
+//  PRETEXT — prepare text once
+// ═══════════════════════════════════════════════════════
+
+let prepared;
+try {
+  prepared = prepareWithSegments(TEXT, FONT);
+} catch (e) {
+  console.error('Pretext prepare failed:', e);
+}
+
+// ═══════════════════════════════════════════════════════
+//  OBSTACLE DETECTION — project building to 2D
+// ═══════════════════════════════════════════════════════
+
+const _vec = new THREE.Vector3();
+const _box = new THREE.Box3();
+
+function getObstacleSpans(canvasW, canvasH) {
+  // Use an offscreen canvas at reduced resolution for speed
+  const scale = 0.5;
+  const scW = Math.ceil(canvasW * scale);
+  const scH = Math.ceil(canvasH * scale);
+
+  const oc = document.createElement('canvas');
+  oc.width = scW;
+  oc.height = scH;
+  const octx = oc.getContext('2d');
+  octx.fillStyle = '#000';
+  octx.fillRect(0, 0, scW, scH);
+
+  // For each mesh, project vertices and draw filled polygon
+  octx.fillStyle = '#fff';
+
+  for (const mesh of buildingMeshes) {
+    const geo = mesh.geometry;
+    const posAttr = geo.getAttribute('position');
+    if (!posAttr) continue;
+
+    // Get world matrix
+    mesh.updateWorldMatrix(true, false);
+    const worldMatrix = mesh.matrixWorld;
+
+    const verts = [];
+    for (let i = 0; i < posAttr.count; i++) {
+      _vec.set(posAttr.getX(i), posAttr.getY(i), posAttr.getZ(i));
+      _vec.applyMatrix4(worldMatrix);
+      _vec.project(camera);
+      // Convert to canvas coords
+      const px = (_vec.x * 0.5 + 0.5) * scW;
+      const py = (-_vec.y * 0.5 + 0.5) * scH;
+      verts.push(px, py);
+    }
+
+    if (verts.length >= 6) {
+      octx.beginPath();
+      octx.moveTo(verts[0], verts[1]);
+      for (let i = 2; i < verts.length; i += 2) {
+        octx.lineTo(verts[i], verts[i + 1]);
+      }
+      octx.closePath();
+      octx.fill();
+    }
+  }
+
+  // Dilate slightly for a soft margin
+  const margin = 2; // pixels at scaled resolution
+  const dilated = document.createElement('canvas');
+  dilated.width = scW;
+  dilated.height = scH;
+  const dctx = dilated.getContext('2d');
+  dctx.filter = `blur(${margin}px)`;
+  dctx.drawImage(oc, 0, 0);
+  dctx.filter = 'none';
+
+  // Scan rows for obstacle spans
+  const imageData = dctx.getImageData(0, 0, scW, scH);
+  const data = imageData.data;
+  const spans = [];
+
+  for (let row = 0; row < scH; row++) {
+    const rowSpans = [];
+    let inSpan = false;
+    let spanStart = 0;
+
+    for (let col = 0; col < scW; col++) {
+      const idx = (row * scW + col) * 4;
+      const isObstacle = data[idx] > 20; // threshold
+
+      if (isObstacle && !inSpan) {
+        inSpan = true;
+        spanStart = col;
+      } else if (!isObstacle && inSpan) {
+        inSpan = false;
+        rowSpans.push([spanStart / scale, col / scale]); // back to full res
+      }
+    }
+    if (inSpan) {
+      rowSpans.push([spanStart / scale, scW / scale]);
+    }
+
+    // Also store the row index in text canvas coords
+    const textRowY = (row / scH) * canvasH;
+    // Only add if y is within canvas
+    if (textRowY >= 0 && textRowY <= canvasH) {
+      spans.push({ y: textRowY, spans: rowSpans });
+    }
+  }
+
+  return spans;
+}
+
+// ═══════════════════════════════════════════════════════
+//  TEXT LAYOUT & RENDERING
+// ═══════════════════════════════════════════════════════
+
+function renderText(spans, dispW, dispH) {
+  if (!prepared) return;
+
+  const W = dispW;
+  const H = dispH;
+  const { left: marginLeft, right: marginRight } = getMargins(W, H);
+
+  // Clear with very dark background
+  tctx.fillStyle = '#080712';
+  tctx.fillRect(0, 0, W, H);
+
+  // Subtle vignette overlay (drawn as gradient)
+  const vigGrad = tctx.createRadialGradient(W / 2, H / 2, H * 0.2, W / 2, H / 2, H * 0.7);
+  vigGrad.addColorStop(0, 'rgba(8,7,18,0)');
+  vigGrad.addColorStop(1, 'rgba(8,7,18,0.4)');
+  tctx.fillStyle = vigGrad;
+  tctx.fillRect(0, 0, W, H);
+
+  tctx.font = FONT;
+  tctx.textBaseline = 'top';
+
+  // Build a per-row obstacle lookup
+  const spanMap = new Map();
+  for (const row of spans) {
+    const rowIdx = Math.floor(row.y);
+    spanMap.set(rowIdx, row.spans);
+  }
+
+  // Layout text with Pretext, filling column by column
+  let cursor = { segmentIndex: 0, graphemeIndex: 0 };
+  const colX = marginLeft;
+  const colW = W - marginLeft - marginRight;
+  const yTop = marginLeft * 0.3 + H * 0.08;
+  const yBottom = H - marginLeft * 0.1;
+
+  let y = yTop;
+  let linesDrawn = 0;
+
+  while (y < yBottom) {
+    const rowIdx = Math.floor(y);
+    const obstacleSpans = spanMap.get(rowIdx) || [];
+
+    // If there are obstacles at this row, we need to flow around them
+    if (obstacleSpans.length === 0) {
+      // No obstacle — fill the full width
+      const range = layoutNextLineRange(prepared, cursor, colW);
+      if (!range) break;
+      const line = materializeLineRange(prepared, range);
+      if (!line || !line.text) { y += LINE_H; continue; }
+
+      const text = line.text;
+      tctx.fillStyle = `rgba(232, 213, 183, ${0.7 + Math.random() * 0.15})`;
+      tctx.fillText(text, colX, y);
+      cursor = range.end;
+      y += LINE_H;
+      linesDrawn++;
+      continue;
+    }
+
+    // We have obstacles — sort spans by x
+    const sorted = [...obstacleSpans].sort((a, b) => a[0] - b[0]);
+
+    // Check if we can fit text in any of the gaps
+    let prevEnd = colX;
+    let fitAny = false;
+
+    for (const [sx, ex] of sorted) {
+      // Gap before this obstacle
+      const gapStart = prevEnd;
+      const gapW = sx - gapStart;
+      if (gapW >= 30) {
+        const range = layoutNextLineRange(prepared, cursor, gapW);
+        if (range) {
+          const line = materializeLineRange(prepared, range);
+          if (line && line.text) {
+            tctx.fillStyle = `rgba(232, 213, 183, ${0.7 + Math.random() * 0.15})`;
+            tctx.fillText(line.text, gapStart, y);
+            cursor = range.end;
+            fitAny = true;
+            linesDrawn++;
+            break; // one line segment per row
+          }
+        }
+      }
+      prevEnd = ex;
+    }
+
+    // Gap after last obstacle
+    if (!fitAny) {
+      const gapW = colW - prevEnd;
+      if (gapW >= 30) {
+        const range = layoutNextLineRange(prepared, cursor, gapW);
+        if (range) {
+          const line = materializeLineRange(prepared, range);
+          if (line && line.text) {
+            tctx.fillStyle = `rgba(232, 213, 183, ${0.7 + Math.random() * 0.15})`;
+            tctx.fillText(line.text, prevEnd, y);
+            cursor = range.end;
+            fitAny = true;
+            linesDrawn++;
+          }
+        }
+      }
+    }
+
+    if (!fitAny) {
+      // Skip this row if the gap is too small and we had obstacle spans
+      // But if there are no obstacles at this row (shouldn't happen here but just in case),
+      // we still need to advance
+      y += LINE_H;
+    } else {
+      y += LINE_H;
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  ANIMATION LOOP
+// ═══════════════════════════════════════════════════════
+
+let lastLayoutTime = 0;
+const clock = new THREE.Clock();
+let layoutRequested = true;
+
+function animate() {
+  const dt = Math.min(clock.getDelta(), 0.05);
+
+  // Update controls (autoRotate is handled by OrbitControls)
+  controls.update();
+
+  // Building also follows controls auto-rotation for obstacle detection
+  // OrbitControls rotates the camera around the target
+  // We need the building's apparent orientation from the camera
+  // So we don't rotate the building itself — instead, the camera does
+
+  // Request re-layout (throttled)
+  const now = performance.now();
+  if (now - lastLayoutTime > LAYOUT_THROTTLE_MS) {
+    layoutRequested = true;
+  }
+
+  // Resize canvases if needed
+  const dpr = Math.min(devicePixelRatio, 2);
+  const dispW = innerWidth;
+  const dispH = innerHeight;
+  const needResize = textCanvas.width !== dispW * dpr;
+
+  if (needResize) {
+    textCanvas.width = dispW * dpr;
+    textCanvas.height = dispH * dpr;
+    textCanvas.style.width = dispW + 'px';
+    textCanvas.style.height = dispH + 'px';
+    // Scale is reset when canvas is resized
+    tctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    renderer.setSize(dispW, dispH);
+    camera.aspect = dispW / dispH;
+    camera.updateProjectionMatrix();
+    layoutRequested = true;
+  }
+
+  // Re-layout text
+  if (layoutRequested && prepared) {
+    const spans = getObstacleSpans(dispW, dispH);
+    renderText(spans, dispW, dispH);
+    lastLayoutTime = now;
+    layoutRequested = false;
+  }
+
+  // Render three.js scene
+  renderer.render(scene, camera);
+
+  requestAnimationFrame(animate);
+}
+
+// ═══════════════════════════════════════════════════════
+//  START
+// ═══════════════════════════════════════════════════════
+
+async function init() {
+  await document.fonts.ready;
+  await new Promise(r => setTimeout(r, 150));
+
+  // Initial setup
+  const dpr = Math.min(devicePixelRatio, 2);
+  textCanvas.width = innerWidth * dpr;
+  textCanvas.height = innerHeight * dpr;
+  textCanvas.style.width = innerWidth + 'px';
+  textCanvas.style.height = innerHeight + 'px';
+  tctx.scale(dpr, dpr);
+
+  document.getElementById('loading').classList.add('hidden');
+
+  // Go
+  animate();
+}
+
+init().catch(console.error);
+</script>
+</body>
+</html>

@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>文字之塔 · Tower of Words</title>
+  <style>
+    html, body { margin: 0; padding: 0; overflow: hidden; background: #050508; font-family: system-ui, sans-serif; }
+    canvas { display: block; }
+    #info {
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      color: rgba(232,213,183,0.25); font-size: 13px; text-align: center;
+      pointer-events: none; letter-spacing: 0.5px;
+    }
+    #loading {
+      position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+      color: rgba(232,213,183,0.4); font-size: 15px; letter-spacing: 4px;
+      background: #050508; z-index: 10; transition: opacity 1s;
+    }
+    #loading.hidden { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+<div id="loading">✦ 砌 築 中 ✦</div>
+<div id="info">🖱 拖曳旋轉 · 🔍 滾輪縮放 · 按 <kbd style="background:rgba(255,255,255,0.06);padding:0 5px;border-radius:2px">s</kbd> 截圖</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { prepareWithSegments, layoutWithLines } from 'https://esm.sh/@chenglou/pretext@0.0.6';
+
+// ═══════════════════════════════════════════════════════
+//  TEXT CORPUS — poems & prose about towers
+// ═══════════════════════════════════════════════════════
+
+const CORPUS = [
+  // ── Scroll I: Ancient Chinese poetry ──
+  '夜宿山寺  李白',
+  '危樓高百尺，手可摘星辰。',
+  '不敢高聲語，恐驚天上人。',
+  '',
+  '登鸛雀樓  王之渙',
+  '白日依山盡，黃河入海流。',
+  '欲窮千里目，更上一層樓。',
+  '',
+  '黃鶴樓  崔顥',
+  '昔人已乘黃鶴去，此地空餘黃鶴樓。',
+  '黃鶴一去不復返，白雲千載空悠悠。',
+  '晴川歷歷漢陽樹，芳草萋萋鸚鵡洲。',
+  '日暮鄉關何處是？煙波江上使人愁。',
+  '',
+  '滕王閣詩  王勃',
+  '滕王高閣臨江渚，佩玉鳴鸞罷歌舞。',
+  '畫棟朝飛南浦雲，珠簾暮捲西山雨。',
+  '閒雲潭影日悠悠，物換星移幾度秋。',
+  '閣中帝子今何在？檻外長江空自流。',
+  '',
+
+  // ── Scroll II: The Tower of Words ──
+  'THE TOWER OF WORDS',
+  '',
+  'The tower is built from silence.',
+  'Each brick a breath, each window a thought.',
+  'Words rise like stairs winding toward the sky.',
+  'Letters are the beams that hold up the heavens.',
+  '',
+  'This is the architecture of the invisible:',
+  'a building made of meaning.',
+  'In every line a floor, in every verse a room.',
+  'The roof is open to the stars.',
+  'The foundation is rooted in the human heart.',
+  '',
+  'Come in, wanderer, and read yourself home.',
+  '',
+  'Each page is a chamber where light enters',
+  'through the windows of language.',
+  'Each metaphor is a door between worlds.',
+  'Each story is a corridor where time bends.',
+  '',
+
+  // ── Scroll III: Reflections ──
+  '文字之塔',
+  '',
+  '每一層都是故事，每一面牆都是詩。',
+  '字是磚，句是樑，',
+  '篇章是連綿的拱廊。',
+  '這座建築沒有藍圖，',
+  '卻有無數雙手在砌築。',
+  '',
+  '讀者走進來，帶走光。',
+  '作者離開後，留下影。',
+  '文字之塔不生不滅，',
+  '只要還有人在閱讀，',
+  '它就站在那裡。',
+  '',
+  'Words are the only buildings',
+  'that weather cannot erode.',
+  'Time itself respects the sentence.',
+  'To read is to inhabit.',
+  'To write is to build a home',
+  'for someone you have not yet met.',
+  '',
+];
+
+// ═══════════════════════════════════════════════════════
+//  GLOBALS
+// ═══════════════════════════════════════════════════════
+let scene, camera, renderer, controls, composer;
+let towerGroup, baseMesh, roofMesh;
+let particles, starField;
+let clock = new THREE.Clock();
+const WALL_COUNT = 4;
+const TOWER_WIDTH = 3.2;
+const TEXTURE_W = 660;
+const TEXTURE_H = 920;
+const FONT = '500 14px "Georgia", "Songti SC", "Noto Serif CJK SC", "SimSun", serif';
+const LINE_H = 22;
+const PRE_WIDTH = TEXTURE_W - 100;  // 560px text column
+
+// ═══════════════════════════════════════════════════════
+//  BUILD WALL TEXTURES
+// ═══════════════════════════════════════════════════════
+function buildTextures() {
+  // Combine corpus into one text block
+  const fullText = CORPUS.join('\n');
+
+  // Pretext layout
+  const prepared = prepareWithSegments(fullText, FONT);
+  const { lines } = layoutWithLines(prepared, PRE_WIDTH, LINE_H);
+
+  if (!lines || lines.length === 0) {
+    console.error('Pretext returned no lines');
+    return [];
+  }
+
+  const totalLines = lines.length;
+  const linesPerWall = Math.ceil(totalLines / WALL_COUNT);
+  const textures = [];
+
+  for (let w = 0; w < WALL_COUNT; w++) {
+    const start = w * linesPerWall;
+    const end = Math.min(start + linesPerWall, totalLines);
+    const wallLines = lines.slice(start, end);
+
+    const canvas = document.createElement('canvas');
+    canvas.width = TEXTURE_W;
+    canvas.height = TEXTURE_H;
+    const ctx = canvas.getContext('2d');
+
+    // ── Background gradient (dark, warm) ──
+    const bgGrad = ctx.createLinearGradient(0, 0, 0, TEXTURE_H);
+    bgGrad.addColorStop(0, '#0e0c1a');
+    bgGrad.addColorStop(0.3, '#0a0915');
+    bgGrad.addColorStop(0.7, '#080712');
+    bgGrad.addColorStop(1, '#06050e');
+    ctx.fillStyle = bgGrad;
+    ctx.fillRect(0, 0, TEXTURE_W, TEXTURE_H);
+
+    // ── Subtle texture overlay ──
+    for (let i = 0; i < 300; i++) {
+      const x = Math.random() * TEXTURE_W;
+      const y = Math.random() * TEXTURE_H;
+      const s = Math.random() * 2 + 0.5;
+      ctx.fillStyle = `rgba(200,185,160,${Math.random() * 0.015})`;
+      ctx.fillRect(x, y, s, s);
+    }
+
+    // ── Side decorations ──
+    ctx.strokeStyle = 'rgba(200,185,160,0.06)';
+    ctx.lineWidth = 1;
+    for (let x of [45, TEXTURE_W - 45]) {
+      ctx.beginPath();
+      ctx.moveTo(x, 30);
+      ctx.lineTo(x, TEXTURE_H - 30);
+      ctx.stroke();
+    }
+
+    // ── Wall number (subtle) ──
+    const wallMarks = ['東', '南', '西', '北'];
+    ctx.save();
+    ctx.fillStyle = 'rgba(200,185,160,0.08)';
+    ctx.font = '11px "Songti SC", serif';
+    ctx.fillText(wallMarks[w] + ' 面', 55, 38);
+    ctx.restore();
+
+    // ── Render text lines with vertical gradient ──
+    const availableH = TEXTURE_H - 80;
+    const spacing = availableH / Math.max(wallLines.length, 1);
+    const startY = 55;
+
+    for (let i = 0; i < wallLines.length; i++) {
+      const line = wallLines[i];
+      const y = startY + i * spacing;
+
+      // Position in wall (0..1) for brightness fade
+      const t = i / Math.max(wallLines.length - 1, 1);
+      // Top lines are bright, bottom lines fade slightly
+      const bright = 1 - t * 0.25;
+
+      const isTitle = line.text.startsWith('THE') || line.text.startsWith('文字');
+      const isSection = line.text.match(/^[A-Z\s]{3,}$/) || line.text.includes('——');
+      const isEmpty = line.text.trim() === '';
+
+      if (isEmpty) continue;
+
+      if (isTitle) {
+        ctx.fillStyle = `rgba(232, 213, 183, ${0.6 * bright})`;
+        ctx.font = 'bold 16px Georgia, "Songti SC", serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(line.text, 65, y);
+      } else if (isSection) {
+        ctx.fillStyle = `rgba(200, 185, 160, ${0.3 * bright})`;
+        ctx.font = 'italic 12px Georgia, serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(line.text, 65, y);
+      } else {
+        ctx.fillStyle = `rgba(232, 213, 183, ${0.85 * bright})`;
+        ctx.font = '14px Georgia, "Songti SC", "Noto Serif CJK SC", serif';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(line.text, 65, y);
+      }
+    }
+
+    // ── Floor decoration lines ──
+    const floorYs = [startY + 0.25 * availableH, startY + 0.55 * availableH, startY + 0.80 * availableH];
+    for (const fy of floorYs) {
+      ctx.strokeStyle = 'rgba(200,185,160,0.04)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(55, fy);
+      ctx.lineTo(TEXTURE_W - 55, fy);
+      ctx.stroke();
+    }
+
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    texture.wrapS = THREE.ClampToEdgeWrapping;
+    texture.wrapT = THREE.ClampToEdgeWrapping;
+    textures.push(texture);
+  }
+
+  return textures;
+}
+
+// ═══════════════════════════════════════════════════════
+//  BUILD TOWER
+// ═══════════════════════════════════════════════════════
+function buildTower(textures) {
+  towerGroup = new THREE.Group();
+
+  const halfW = TOWER_WIDTH / 2;
+  const wallH = 5.2;
+  const wallW = TOWER_WIDTH;
+  const geo = new THREE.PlaneGeometry(wallW, wallH);
+
+  const positions = [
+    { x: 0, y: wallH / 2, z: halfW, ry: 0 },          // front
+    { x: halfW, y: wallH / 2, z: 0, ry: Math.PI / 2 }, // right
+    { x: 0, y: wallH / 2, z: -halfW, ry: Math.PI },    // back
+    { x: -halfW, y: wallH / 2, z: 0, ry: -Math.PI / 2 }, // left
+  ];
+
+  for (let i = 0; i < WALL_COUNT; i++) {
+    const mat = new THREE.MeshBasicMaterial({
+      map: textures[i],
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.92,
+    });
+    const mesh = new THREE.Mesh(geo.clone(), mat);
+    mesh.position.set(positions[i].x, positions[i].y, positions[i].z);
+    mesh.rotation.y = positions[i].ry;
+    towerGroup.add(mesh);
+  }
+
+  // ── Corner pillars ──
+  const pillarMat = new THREE.MeshStandardMaterial({
+    color: 0x887766,
+    metalness: 0.6,
+    roughness: 0.3,
+    transparent: true,
+    opacity: 0.3,
+  });
+  for (let cx of [-halfW, halfW]) {
+    for (let cz of [-halfW, halfW]) {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.08, wallH, 0.08), pillarMat);
+      pillar.position.set(cx, wallH / 2, cz);
+      towerGroup.add(pillar);
+    }
+  }
+
+  // ── Roof (pyramid) ──
+  const roofGeo = new THREE.ConeGeometry(TOWER_WIDTH * 0.75, 1.0, 4);
+  const roofMat = new THREE.MeshStandardMaterial({
+    color: 0x887766,
+    metalness: 0.7,
+    roughness: 0.2,
+    emissive: 0x332211,
+    emissiveIntensity: 0.1,
+    transparent: true,
+    opacity: 0.5,
+    wireframe: true,
+  });
+  roofMesh = new THREE.Mesh(roofGeo, roofMat);
+  roofMesh.position.set(0, wallH + 0.5, 0);
+  roofMesh.rotation.y = Math.PI / 4;
+  towerGroup.add(roofMesh);
+
+  // ── Floating ring above roof ──
+  const ringPoints = [];
+  for (let i = 0; i <= 48; i++) {
+    const theta = (i / 48) * Math.PI * 2;
+    const r = 1.5;
+    ringPoints.push(new THREE.Vector3(Math.cos(theta) * r, 0, Math.sin(theta) * r));
+  }
+  const ringGeo2 = new THREE.BufferGeometry().setFromPoints(ringPoints);
+  const ringMat2 = new THREE.LineBasicMaterial({
+    color: 0xffcc88,
+    transparent: true,
+    opacity: 0.15,
+  });
+  const ringLine = new THREE.Line(ringGeo2, ringMat2);
+  ringLine.position.set(0, wallH + 1.6, 0);
+  towerGroup.add(ringLine);
+
+  // ── Base ──
+  const baseMat = new THREE.MeshStandardMaterial({
+    color: 0x554433,
+    metalness: 0.4,
+    roughness: 0.7,
+    transparent: true,
+    opacity: 0.3,
+  });
+  baseMesh = new THREE.Mesh(new THREE.BoxGeometry(TOWER_WIDTH + 0.3, 0.15, TOWER_WIDTH + 0.3), baseMat);
+  baseMesh.position.set(0, 0.075, 0);
+  towerGroup.add(baseMesh);
+
+  // ── Steps ──
+  for (let i = 0; i < 3; i++) {
+    const stepMat = new THREE.MeshStandardMaterial({
+      color: 0x665544,
+      metalness: 0.3,
+      roughness: 0.8,
+      transparent: true,
+      opacity: 0.15,
+    });
+    const s = TOWER_WIDTH + 0.6 + i * 0.2;
+    const step = new THREE.Mesh(new THREE.BoxGeometry(s, 0.06, s), stepMat);
+    step.position.set(0, -0.1 - i * 0.08, 0);
+    towerGroup.add(step);
+  }
+
+  scene.add(towerGroup);
+}
+
+// ═══════════════════════════════════════════════════════
+//  PARTICLES — floating embers around the tower
+// ═══════════════════════════════════════════════════════
+function buildParticles() {
+  const count = 400;
+  const positions = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+  const speeds = new Float32Array(count);
+  const phases = new Float32Array(count);
+  const radii = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const theta = Math.random() * Math.PI * 2;
+    const r = 1.5 + Math.random() * 3.5;
+    const y = Math.random() * 6 - 0.5;
+    positions[i * 3] = Math.cos(theta) * r;
+    positions[i * 3 + 1] = y;
+    positions[i * 3 + 2] = Math.sin(theta) * r;
+    sizes[i] = 0.02 + Math.random() * 0.06;
+    speeds[i] = 0.2 + Math.random() * 0.8;
+    phases[i] = Math.random() * Math.PI * 2;
+    radii[i] = r;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const mat = new THREE.PointsMaterial({
+    color: 0xffcc88,
+    size: 0.04,
+    transparent: true,
+    opacity: 0.6,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+
+  particles = new THREE.Points(geo, mat);
+  particles.userData = { speeds, phases, radii, count };
+  scene.add(particles);
+}
+
+// ═══════════════════════════════════════════════════════
+//  STARFIELD
+// ═══════════════════════════════════════════════════════
+function buildStars() {
+  const count = 1500;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const sizes = new Float32Array(count);
+
+  for (let i = 0; i < count; i++) {
+    const r = 20 + Math.random() * 80;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+    positions[i * 3 + 1] = r * Math.cos(phi) * 0.4;
+    positions[i * 3 + 2] = r * Math.sin(phi) * Math.sin(theta);
+
+    const w = Math.random();
+    colors[i * 3] = 0.7 + w * 0.3;
+    colors[i * 3 + 1] = 0.7 + w * 0.2;
+    colors[i * 3 + 2] = 0.8 + w * 0.2;
+    sizes[i] = 0.05 + Math.random() * 0.25;
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+
+  const mat = new THREE.PointsMaterial({
+    size: 0.15,
+    vertexColors: true,
+    transparent: true,
+    opacity: 0.7,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+
+  starField = new THREE.Points(geo, mat);
+  scene.add(starField);
+}
+
+// ═══════════════════════════════════════════════════════
+//  GROUND
+// ═══════════════════════════════════════════════════════
+function buildGround() {
+  const geo = new THREE.PlaneGeometry(20, 20);
+  const mat = new THREE.MeshStandardMaterial({
+    color: 0x080712,
+    metalness: 0.0,
+    roughness: 1,
+    transparent: true,
+    opacity: 0.6,
+    side: THREE.DoubleSide,
+  });
+  const ground = new THREE.Mesh(geo, mat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = -0.3;
+  scene.add(ground);
+
+  // Ground glow ring
+  const glowGeo = new THREE.RingGeometry(1.6, 3.5, 48);
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0x332211,
+    transparent: true,
+    opacity: 0.06,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const glow = new THREE.Mesh(glowGeo, glowMat);
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = -0.28;
+  scene.add(glow);
+}
+
+// ═══════════════════════════════════════════════════════
+//  SETUP
+// ═══════════════════════════════════════════════════════
+async function init() {
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x050508);
+  scene.fog = new THREE.FogExp2(0x050508, 0.006);
+
+  camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 200);
+  camera.position.set(5.5, 3, 5.5);
+  camera.lookAt(0, 2, 0);
+
+  renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 0.8;
+  document.body.appendChild(renderer.domElement);
+
+  // Controls
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.target.set(0, 2.2, 0);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.05;
+  controls.autoRotate = true;
+  controls.autoRotateSpeed = 0.8;
+  controls.minDistance = 2.5;
+  controls.maxDistance = 15;
+  controls.update();
+
+  // Post-processing — bloom
+  composer = new EffectComposer(renderer);
+  composer.addPass(new RenderPass(scene, camera));
+  const bloom = new UnrealBloomPass(
+    new THREE.Vector2(innerWidth, innerHeight),
+    0.3, 0.2, 0.1
+  );
+  composer.addPass(bloom);
+
+  // Build wall textures (async — Pretext is sync but fonts may not be ready)
+  await document.fonts.ready;
+  const textures = await new Promise((resolve) => {
+    // Small delay to let fonts settle
+    setTimeout(() => resolve(buildTextures()), 50);
+  });
+
+  // Build scene
+  buildTower(textures);
+  buildParticles();
+  buildStars();
+  buildGround();
+
+  // Lighting
+  const ambient = new THREE.AmbientLight(0x222244, 0.3);
+  scene.add(ambient);
+
+  const main = new THREE.DirectionalLight(0xffd58a, 0.8);
+  main.position.set(3, 8, 4);
+  scene.add(main);
+
+  const fill = new THREE.DirectionalLight(0x8866ff, 0.3);
+  fill.position.set(-4, 2, -3);
+  scene.add(fill);
+
+  const rim = new THREE.DirectionalLight(0x4488ff, 0.2);
+  rim.position.set(-2, 3, -5);
+  scene.add(rim);
+
+  // Done loading
+  document.getElementById('loading').classList.add('hidden');
+
+  // Start animation
+  animate();
+}
+
+// ═══════════════════════════════════════════════════════
+//  ANIMATION
+// ═══════════════════════════════════════════════════════
+function animate() {
+  const elapsed = clock.getElapsedTime();
+
+  if (towerGroup) {
+    // Gentle tower sway
+    towerGroup.position.y = Math.sin(elapsed * 0.15) * 0.04;
+
+    // Roof rotation
+    if (roofMesh) {
+      roofMesh.rotation.y += 0.002;
+    }
+  }
+
+  // Particles — orbit and bob
+  if (particles) {
+    const pos = particles.geometry.attributes.position.array;
+    const d = particles.userData;
+    for (let i = 0; i < d.count; i++) {
+      const angle = d.phases[i] + elapsed * d.speeds[i] * 0.12;
+      const r = d.radii[i] + Math.sin(elapsed * d.speeds[i] * 0.5 + i) * 0.1;
+      const yBase = d.radii[i] * 0.3 + 0.5;
+      pos[i * 3] = Math.cos(angle) * r;
+      pos[i * 3 + 1] = yBase + Math.sin(elapsed * d.speeds[i] * 0.4 + d.phases[i]) * 0.8;
+      pos[i * 3 + 2] = Math.sin(angle) * r;
+    }
+    particles.geometry.attributes.position.needsUpdate = true;
+
+    // Opacity pulse
+    particles.material.opacity = 0.4 + Math.sin(elapsed * 0.2) * 0.15;
+  }
+
+  // Star twinkle
+  if (starField) {
+    starField.material.opacity = 0.6 + Math.sin(elapsed * 0.15) * 0.1;
+  }
+
+  controls.update();
+  composer.render();
+  requestAnimationFrame(animate);
+}
+
+// ═══════════════════════════════════════════════════════
+//  RESIZE / KEYBOARD
+// ═══════════════════════════════════════════════════════
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+window.addEventListener('keydown', (e) => {
+  if (e.key === 's' || e.key === 'S') {
+    renderer.render(scene, camera);
+    const link = document.createElement('a');
+    link.download = '文字之塔.png';
+    link.href = renderer.domElement.toDataURL('image/png');
+    link.click();
+  }
+});
+
+// GO!
+init().catch(console.error);
+</script>
+</body>
+</html>

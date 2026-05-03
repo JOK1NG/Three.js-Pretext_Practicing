@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第四阶段 · Pretext 入门</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0d0d1a; color: #e0d8c8;
+    font-family: 'Songti SC', 'Noto Serif CJK SC', serif;
+    display: flex; flex-direction: column; align-items: center;
+    min-height: 100vh; padding: 40px 20px;
+  }
+  h1 { font-size: 18px; font-weight: normal; color: #a0a0b0; margin-bottom: 12px; letter-spacing: 0.2em; }
+  canvas {
+    border: 1px solid #333350; border-radius: 4px;
+    margin-bottom: 16px;
+  }
+  .controls {
+    display: flex; align-items: center; gap: 12px;
+    color: #8888a0; font-size: 14px;
+  }
+  input[type=range] { width: 200px; accent-color: #c0a060; }
+  #widthLabel { color: #c0a060; min-width: 60px; }
+</style>
+</head>
+<body>
+
+<h1>拖滑块改变容器宽度 · 文字实时重排</h1>
+
+<canvas id="c" width="600" height="500"></canvas>
+
+<div class="controls">
+  <span>宽度</span>
+  <input type="range" id="slider" min="150" max="550" value="350" step="10">
+  <span id="widthLabel">350px</span>
+</div>
+
+<script type="module">
+import { prepareWithSegments, layoutWithLines }
+  from 'https://esm.sh/@chenglou/pretext@0.0.6';
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const slider = document.getElementById('slider');
+const label = document.getElementById('widthLabel');
+
+// 一首诗，你想要的话可以换
+const TEXT = '空山新雨后，天气晚来秋。'
+  + '明月松间照，清泉石上流。'
+  + '竹喧归浣女，莲动下渔舟。'
+  + '随意春芳歇，王孙自可留。';
+
+const FONT = '28px "STKaiti", "KaiTi", "楷体", serif';
+const LINE_H = 44;
+
+// ═══════════════════════════════════
+// 步骤 1：预处理（只做一次！）
+// ═══════════════════════════════════
+//   prepareWithSegments 把文字拆成最小单位（grapheme），
+//   做好测量，存起来。这个方法比较贵，所以只调一次。
+const prepared = prepareWithSegments(TEXT, FONT);
+
+// ═══════════════════════════════════
+// 步骤 2：给一个宽度 → 拿到分行结果 → 画出来
+// ═══════════════════════════════════
+function redraw(containerWidth) {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // layoutWithLines：给定宽度和行高，Pretext 告诉你每行放什么字
+  // 返回 { lines: [{ text, width, ... }], height }
+  const { lines } = layoutWithLines(prepared, containerWidth, LINE_H);
+
+  // 画一个虚线框表示容器边界
+  ctx.strokeStyle = '#333350';
+  ctx.setLineDash([4, 6]);
+  ctx.strokeRect(19, 19, containerWidth, lines.length * LINE_H + 2);
+  ctx.setLineDash([]);
+
+  // 逐行把文字画上去
+  ctx.font = FONT;
+  ctx.fillStyle = '#e0d8c8';
+  ctx.textBaseline = 'top';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i].text, 20, 20 + i * LINE_H);
+  }
+}
+
+// 初始绘制
+redraw(slider.value);
+
+// 滑块拖动 → 重新分行 → 重新画
+slider.addEventListener('input', () => {
+  const w = parseInt(slider.value);
+  label.textContent = w + 'px';
+  redraw(w);
+});
+
+// 练习：打开控制台，看看 { lines } 里面有什么
+console.log('试试：把 slider 拖到最窄，观察每行只放一两个字的断行效果');
+console.log('试试：把 slider 拖到最宽，观察所有诗挤在一两行里');
+</script>
+</body>
+</html>

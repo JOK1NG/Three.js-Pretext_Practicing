@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第一阶段 · 巩固练习</title>
+<style>
+  * { margin: 0; padding: 0; }
+  body { background: #1a1a2e; overflow: hidden; }
+  canvas { display: block; }
+  #hints {
+    position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%);
+    color: rgba(255,255,255,0.5); font-family: 'SF Mono', 'Menlo', monospace;
+    font-size: 13px; pointer-events: none; z-index: 10;
+    text-align: center; line-height: 1.8;
+  }
+</style>
+</head>
+<body>
+<div id="hints">
+  左键拖拽 = 旋转&emsp;滚轮 = 缩放&emsp;右键拖拽 = 平移<br>
+  练习：改颜色 改大小 改速度 加更多物体
+</div>
+
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ===== 场景、相机、渲染器（和你写的一样）=====
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#1a1a2e');
+
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(4, 3, 7);
+camera.lookAt(0, 0, 0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+// ===== 练习 1：立方体（参数已改，和你的比对着看）=====
+//
+// 对比你原来的：
+//   BoxGeometry(1, 1, 1)   → BoxGeometry(1.5, 0.4, 1.5)  扁了
+//   color: '#e94560'      → '#f0a500'                     暖橙
+//   opacity: 0.5          → 1.0                            不透明了
+//
+const cubeGeo = new THREE.BoxGeometry(1.5, 0.4, 1.5);
+const cubeMat = new THREE.MeshStandardMaterial({ color: '#f0a500', roughness: 0.3, metalness: 0.1 });
+const cube = new THREE.Mesh(cubeGeo, cubeMat);
+cube.position.set(-1.2, 0, 0);   // 移到左边，给球腾位置
+scene.add(cube);
+
+// ===== 练习 2：加一个球体 ====
+//
+// 新学的类：SphereGeometry(半径, 水平分段, 垂直分段)
+//   半径 0.6 — 比方块小一点
+//   分段数 32, 16 — 数字越大越圆，但也越重（32 足够圆了）
+//
+const sphereGeo = new THREE.SphereGeometry(0.6, 32, 16);
+const sphereMat = new THREE.MeshStandardMaterial({ color: '#16c79a', roughness: 0.2, metalness: 0.3 });
+const sphere = new THREE.Mesh(sphereGeo, sphereMat);
+sphere.position.set(1.2, 0, 0);  // 放在右边
+scene.add(sphere);
+
+// ===== 练习 2b：加一个圆柱体 ====
+const cylGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.2, 32);
+const cylMat = new THREE.MeshStandardMaterial({ color: '#e94560' });
+const cyl = new THREE.Mesh(cylGeo, cylMat);
+cyl.position.set(0, 0.6, 0);
+scene.add(cyl);
+
+// ===== 练习 3：加一个地面，帮助感知空间 ====
+const groundGeo = new THREE.PlaneGeometry(8, 8);
+const groundMat = new THREE.MeshStandardMaterial({ color: '#16213e', roughness: 0.8 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;  // 水平放置（默认是竖着的）
+ground.position.y = -1.5;           // 往下放
+scene.add(ground);
+
+// ===== 光照（加了两盏灯，观察颜色混合）=====
+// 暖光从右上方照
+const warmLight = new THREE.PointLight('#ffe0c0', 60, 20);
+warmLight.position.set(4, 5, 3);
+scene.add(warmLight);
+
+// 冷光从左边补光 — 注意球的左侧会有蓝色反光
+const coolLight = new THREE.PointLight('#8090ff', 30, 15);
+coolLight.position.set(-4, 2, 2);
+scene.add(coolLight);
+
+// 环境光让暗面不完全黑
+const ambient = new THREE.AmbientLight('#303050', 0.8);
+scene.add(ambient);
+
+// ===== 动画循环 ====
+function animate() {
+  requestAnimationFrame(animate);
+
+  // 方块绕 X 和 Y 轴转
+  cube.rotation.x += 0.012;
+  cube.rotation.y += 0.015;
+
+  // 球反方向转，更快一点
+  sphere.rotation.x -= 0.02;
+  sphere.rotation.y -= 0.018;
+
+  // 圆柱绕 Z 轴转（翻跟头）
+  cyl.rotation.z += 0.015;
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// ===== 窗口自适应 ====
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
