@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>着色器测试</title>
+</head>
+<style>
+    * { margin: 0; padding: 0; }
+    body { background: #0a0a1a; overflow: hidden; }
+    canvas { display: block; }
+</style>
+<body>
+    
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// 场景
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#0a0a1a');
+
+// 相机
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+camera.position.set(0, 0, 3);
+camera.lookAt(0, 0, 0);
+
+// 渲染器
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// 控制
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// 灯光
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+scene.add(ambientLight);
+const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5);
+directionalLight.position.set(5, 10, 5);
+scene.add(directionalLight);
+
+// 顶点着色器：决定方块每个顶点的位置
+const vertexShader = `
+  varying vec2 vUv;  // 声明一个变量，用来传给片元着色器
+  
+  void main() {
+    vUv = uv;  // 把顶点的 UV 坐标存起来
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+// 片元着色器：决定每个像素的颜色
+const fragmentShader = `
+  varying vec2 vUv;  // 接收顶点着色器传来的 UV 坐标
+  
+  void main() {
+    // vUv.x 是水平方向（0~1）
+    // vUv.y 是垂直方向（0~1）
+    // 用它们控制红、绿、蓝通道
+    gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0);
+  }
+`;
+
+// 创建材质
+const shaderMaterial = new THREE.ShaderMaterial({
+  vertexShader: vertexShader,
+  fragmentShader: fragmentShader,
+});
+
+// 创建方块
+const geo = new THREE.BoxGeometry(1, 1, 1);
+const mesh = new THREE.Mesh(geo, shaderMaterial);
+scene.add(mesh);
+
+// 渲染循环
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
