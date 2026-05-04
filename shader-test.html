@@ -54,23 +54,25 @@ scene.add(directionalLight);
 
 // 顶点着色器：决定方块每个顶点的位置
 const vertexShader = `
-  varying vec2 vUv;  // 声明一个变量，用来传给片元着色器
+  varying vec2 vUv;
   
   void main() {
-    vUv = uv;  // 把顶点的 UV 坐标存起来
+    vUv = uv;
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
 // 片元着色器：决定每个像素的颜色
 const fragmentShader = `
-  varying vec2 vUv;  // 接收顶点着色器传来的 UV 坐标
+  uniform float uTime;  // 从 JS 传来的时间
+  varying vec2 vUv;
   
   void main() {
-    // vUv.x 是水平方向（0~1）
-    // vUv.y 是垂直方向（0~1）
-    // 用它们控制红、绿、蓝通道
-    gl_FragColor = vec4(vUv.x, vUv.y, 0.0, 1.0);
+    // 用 sin(time + 位置) 做颜色变化
+    float r = sin(vUv.x * 3.14 + uTime) * 0.5 + 0.5;
+    float g = sin(vUv.y * 3.14 + uTime * 1.3) * 0.5 + 0.5;
+    float b = sin((vUv.x + vUv.y) * 3.14 + uTime * 0.7) * 0.5 + 0.5;
+    gl_FragColor = vec4(r, g, b, 1.0);
   }
 `;
 
@@ -78,6 +80,9 @@ const fragmentShader = `
 const shaderMaterial = new THREE.ShaderMaterial({
   vertexShader: vertexShader,
   fragmentShader: fragmentShader,
+  uniforms: {
+    uTime: { value: 0.0 },  // 初始时间
+  },
 });
 
 // 创建方块
@@ -89,6 +94,10 @@ scene.add(mesh);
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
+    
+    // 更新时间
+    shaderMaterial.uniforms.uTime.value = performance.now() * 0.001;
+    
     renderer.render(scene, camera);
 }
 animate();
