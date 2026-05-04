@@ -24,6 +24,69 @@
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { prepareWithSegments, walkLineRanges, materializeLineRange } from 'https://esm.sh/@chenglou/pretext@0.0.6';
+
+//准备pretext诗词和字体
+const TEXT = [
+  '春江潮水连海平，海上明月共潮生。',
+  '滟滟随波千万里，何处春江无月明。',
+  '江流宛转绕芳甸，月照花林皆似霰。',
+].join('\n');
+const FONT = '24px "Songti SC", "Noto Serif CJK SC", serif';
+const COL_W = 400;  // 排版宽度
+const LINE_H = 40;  // 行高
+
+//用pretex排版和拆成独立字符
+function layoutChars() {
+    const prepared = prepareWithSegments(TEXT, FONT);
+    const chars = [];
+
+    // 临时 canvas 用来测量字符宽度
+    const tmp = document.createElement('canvas');
+    const tctx = tmp.getContext('2d');
+    tctx.font = FONT;
+
+    let lineY = 0;
+
+    // walkLineRanges 会逐行遍历排版结果
+    walkLineRanges(prepared, COL_W, (line) => {
+      const range = materializeLineRange(prepared,   line);
+
+      if (!range.text.trim()) {
+      lineY += LINE_H;
+      return;
+    }
+
+    let lineX = 0;
+
+    // 用 Intl.Segmenter 把一行拆成单个字符
+    const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' });
+
+    for (const { segment } of seg.segment(range.text)) {
+      if (segment.trim() === '') {
+        lineX += tctx.measureText(segment).width || 8;
+        continue;
+      }
+
+      const w = tctx.measureText(segment).width || 20;
+
+      chars.push({
+        char: segment,
+        x: lineX + w / 2,
+        y: lineY,
+        width: w,
+      });
+
+      lineX += w;
+    }
+
+    lineY += LINE_H;
+  });
+
+  return chars;
+}
+const chars = layoutChars();
+console.log(chars);  // 看看拆出来的字符长什么样
 
 // 场景
 const scene = new THREE.Scene();
@@ -73,25 +136,87 @@ const material = new THREE.MeshStandardMaterial({
 const terrain = new THREE.Mesh(geometry, material);
 terrain.rotation.x = -Math.PI / 2;  // 旋转 90 度，让它变成水平的
 scene.add(terrain);
-// 1. 创建一个方块
-const boxGeo = new THREE.BoxGeometry(0.3, 0.3, 0.3);
-const boxMat = new THREE.MeshBasicMaterial({ color: 0xff4444 });
-const box = new THREE.Mesh(boxGeo, boxMat);
-box.position.set(0, 5, 0);  // 从高处开始
-scene.add(box);
-// 2. 物理变量
-let velocity = 0;        // 下落速度
-const gravity = -0.005;   // 重力加速度
+
+// 创建字符精灵的函数
+function createCharMesh(char, x, y) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d');
+  
+  ctx.clearRect(0, 0, 64, 64);
+  
+  // 光晕效果
+  ctx.shadowColor = 'rgba(255, 150, 50, 0.8)';
+  ctx.shadowBlur = 15;
+  
+  // 渐变色
+  const gradient = ctx.createLinearGradient(0, 0, 0, 64);
+  gradient.addColorStop(0, '#ffd700');
+  gradient.addColorStop(1, '#ff6644');
+  ctx.fillStyle = gradient;
+  
+  // 字体
+  ctx.font = '48px "Georgia", "Songti SC", serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  
+  // 先画描边
+  ctx.strokeStyle = '#ff6644';
+  ctx.lineWidth = 2;
+  ctx.strokeText(char, 32, 32);
+  
+  // 再画填充
+  ctx.fillText(char, 32, 32);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  const material = new THREE.SpriteMaterial({ 
+    map: texture,
+    transparent: true,
+  });
+  const sprite = new THREE.Sprite(material);
+  sprite.scale.set(0.3, 0.3, 1);
+  
+  sprite.position.set(x * 0.05 - 2, 8, y * 0.05 - 2);
+  
+  return sprite;
+}
+
+// 批量创建所有字符方块
+const charMeshes = [];
+let charIndex = 0;
+
+function spawnChar() {
+  // 每次创建 3 个字符
+  for (let i = 0; i < 3; i++) {
+    const c = chars[charIndex % chars.length];
+    const mesh = createCharMesh(c.char, c.x, c.y);
+    scene.add(mesh);
+    charMeshes.push({
+      mesh: mesh,
+      velocity: 0,
+      char: c.char,
+      vx: (Math.random() - 0.5) * 0.15,
+      vz: (Math.random() - 0.5) * 0.15,
+    });
+    charIndex++;
+  }
+}
+
+// 每 50 毫秒创建一批（3 个）
+setInterval(spawnChar, 50);
+// 物理变量
+const gravity = -0.005;
 const raycaster = new THREE.Raycaster();
-const down = new THREE.Vector3(0, -1, 0);  // 向下的方向
+const down = new THREE.Vector3(0, -1, 0);
 
 // 四个角相对于中心的偏移
-const halfSize = 0.15;  // 方块尺寸的一半
+const halfSize = 0.1;
 const corners = [
-    new THREE.Vector3(-halfSize, 0, -halfSize),  // 左上
-    new THREE.Vector3( halfSize, 0, -halfSize),  // 右上
-    new THREE.Vector3(-halfSize, 0,  halfSize),  // 左下
-    new THREE.Vector3( halfSize, 0,  halfSize),  // 右下
+    new THREE.Vector3(-halfSize, 0, -halfSize),
+    new THREE.Vector3( halfSize, 0, -halfSize),
+    new THREE.Vector3(-halfSize, 0,  halfSize),
+    new THREE.Vector3( halfSize, 0,  halfSize),
 ];
 
 // 渲染循环
@@ -99,36 +224,36 @@ function animate() {
     requestAnimationFrame(animate);
     controls.update();
     
-    // 更新方块位置
-    velocity += gravity;
-    box.position.y += velocity;
-    
-    // 四条射线碰撞检测
-    let maxHitY = -Infinity;
-    
-    for (const corner of corners) {
-        // 射线起点 = 方块位置 + 角的偏移
-        const origin = box.position.clone().add(corner);
-        raycaster.set(origin, down);
+    // 让所有字符方块掉落
+    for (const item of charMeshes) {
+        item.velocity += gravity;
+        item.mesh.position.y += item.velocity;
+        item.mesh.position.x += item.vx;
+        item.mesh.position.z += item.vz;
         
-        const intersects = raycaster.intersectObject(terrain);
-        if (intersects.length > 0) {
-            const hitY = intersects[0].point.y;
-            if (hitY > maxHitY) {
-                maxHitY = hitY;
+        // 四条射线碰撞检测
+        let maxHitY = -Infinity;
+        for (const corner of corners) {
+            const origin = item.mesh.position.clone().add(corner);
+            raycaster.set(origin, down);
+            const intersects = raycaster.intersectObject(terrain);
+            if (intersects.length > 0) {
+                const hitY = intersects[0].point.y;
+                if (hitY > maxHitY) {
+                    maxHitY = hitY;
+                }
+            }
+        }
+        
+        // 落到地形上
+        if (maxHitY > -Infinity) {
+            if (item.mesh.position.y < maxHitY + 0.1) {
+                item.mesh.position.y = maxHitY + 0.1;
+                item.velocity = -item.velocity * 0.3;
             }
         }
     }
     
-    // 如果有碰撞，方块站到最高的那个点上
-    if (maxHitY > -Infinity) {
-        if (box.position.y < maxHitY + 0.15) {
-            box.position.y = maxHitY + 0.15;
-            velocity = -velocity * 0.5;
-        }
-    }
-    
-    // 渲染
     renderer.render(scene, camera);
 }
 animate();
