@@ -25,6 +25,9 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { prepareWithSegments, walkLineRanges, materializeLineRange } from 'https://esm.sh/@chenglou/pretext@0.0.6';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 
 //准备pretext诗词和字体
 const TEXT = [
@@ -90,7 +93,7 @@ console.log(chars);  // 看看拆出来的字符长什么样
 
 // 场景
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#FFFFFF');
+scene.background = new THREE.Color('#0a0a1a');
 
 // 相机
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -137,6 +140,17 @@ const terrain = new THREE.Mesh(geometry, material);
 terrain.rotation.x = -Math.PI / 2;  // 旋转 90 度，让它变成水平的
 scene.add(terrain);
 
+// 后期处理
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(
+  new THREE.Vector2(window.innerWidth, window.innerHeight),
+  0.2,  // strength 强度
+  0.3,  // radius 半径
+  0.5   // threshold 阈值
+);
+composer.addPass(bloomPass);
+
 // 创建字符精灵的函数
 function createCharMesh(char, x, y) {
   const canvas = document.createElement('canvas');
@@ -175,9 +189,9 @@ function createCharMesh(char, x, y) {
     transparent: true,
   });
   const sprite = new THREE.Sprite(material);
-  sprite.scale.set(0.3, 0.3, 1);
+  sprite.scale.set(0.5, 0.5, 1);
   
-  sprite.position.set(x * 0.05 - 2, 8, y * 0.05 - 2);
+  sprite.position.set(x * 0.05 - 2, 15, y * 0.05 - 2);
   
   return sprite;
 }
@@ -198,6 +212,8 @@ function spawnChar() {
       char: c.char,
       vx: (Math.random() - 0.5) * 0.15,
       vz: (Math.random() - 0.5) * 0.15,
+      life: 1.0,           // 生命值
+      isLanded: false,      // 是否已落地
     });
     charIndex++;
   }
@@ -231,6 +247,22 @@ function animate() {
         item.mesh.position.x += item.vx;
         item.mesh.position.z += item.vz;
         
+        // 拖尾效果：10% 概率创建残影，且总数 < 200
+        if (Math.random() < 0.1 && charMeshes.length < 200) {
+            const trail = item.mesh.clone();
+            trail.material = item.mesh.material.clone();
+            trail.material.opacity = 0.3;
+            trail.scale.multiplyScalar(0.8);
+            scene.add(trail);
+            
+            // 残影 150ms 后消失
+            setTimeout(() => {
+                scene.remove(trail);
+                trail.material.dispose();
+                trail.material.map.dispose();
+            }, 150);
+        }
+        
         // 四条射线碰撞检测
         let maxHitY = -Infinity;
         for (const corner of corners) {
@@ -250,11 +282,32 @@ function animate() {
             if (item.mesh.position.y < maxHitY + 0.1) {
                 item.mesh.position.y = maxHitY + 0.1;
                 item.velocity = -item.velocity * 0.3;
+                item.isLanded = true;  // 标记已落地
             }
+        }
+        
+        // 如果已落地，生命值减少
+        if (item.isLanded) {
+            item.life -= 0.005;  // 每帧减少 0.005
+            item.mesh.material.opacity = item.life;  // 更新透明度
+        }
+        
+        // 如果生命值 <= 0，移除字符
+        if (item.life <= 0) {
+            scene.remove(item.mesh);
+            item.mesh.material.dispose();
+            item.mesh.material.map.dispose();
         }
     }
     
-    renderer.render(scene, camera);
+    // 清理已移除的字符
+    for (let i = charMeshes.length - 1; i >= 0; i--) {
+        if (charMeshes[i].life <= 0) {
+            charMeshes.splice(i, 1);
+        }
+    }
+    
+    composer.render();
 }
 animate();
 </script>
