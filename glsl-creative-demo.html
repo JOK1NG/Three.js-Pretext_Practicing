@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>GLSL 创意作品：星球系统</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0a0a0f;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    font-family: 'Courier New', monospace;
+    color: #ccc;
+  }
+  h1 {
+    font-size: 14px;
+    letter-spacing: 4px;
+    text-transform: uppercase;
+    color: #555;
+    margin-bottom: 16px;
+  }
+  canvas {
+    display: block;
+    border-radius: 8px;
+  }
+  .hint {
+    margin-top: 16px;
+    font-size: 12px;
+    color: #444;
+    text-align: center;
+    line-height: 1.8;
+  }
+  .hint span {
+    color: #888;
+    background: #1a1a24;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+</style>
+</head>
+<body>
+
+<h1>GLSL 创意作品：星球系统</h1>
+<canvas id="c" width="600" height="600"></canvas>
+<div class="hint">
+  试试改代码里的这些值：<br>
+  <span>NUM_CIRCLES</span> 圆的数量 &nbsp;
+  <span>GLOW</span> 光晕大小 &nbsp;
+  <span>ORBIT_RADIUS</span> 轨道半径 &nbsp;
+  <span>BASE_SIZE</span> 圆的基础大小
+</div>
+
+<script>
+const canvas = document.getElementById('c');
+const gl = canvas.getContext('webgl');
+
+// ===== 顶点着色器：画一个铺满屏幕的矩形，不用动 =====
+const vsSource = `
+  attribute vec2 aPos;
+  void main() {
+    gl_Position = vec4(aPos, 0.0, 1.0);
+  }
+`;
+
+// ===== 片元着色器：我们的创意主战场 =====
+const fsSource = `
+  precision mediump float;
+  uniform vec2 uResolution;
+  uniform float uTime;
+
+  // ========== 可调参数 ==========
+  #define NUM_CIRCLES 5       // 圆的数量
+  #define GLOW 0.4           // 光晕大小（越大越柔和）
+  #define ORBIT_RADIUS 0.8   // 轨道半径
+  #define BASE_SIZE 0.20      // 圆的基础大小
+
+  // 画一个软边圆，返回亮度值
+  float circle(vec2 uv, vec2 center, float radius, float soft) {
+    float d = length(uv - center);
+    return 1.0 - smoothstep(radius - soft, radius + soft, d);
+  }
+
+  void main() {
+    // 第三步学的：中心化 + 宽高比修正
+    vec2 uv = (gl_FragCoord.xy * 2.0 - uResolution) / uResolution.y;
+
+    // ---------- 背景 ----------
+    // 从中心向外的微弱径向渐变，不是纯黑，有点"太空感"
+    float bgGlow = 0.06 / (length(uv) + 0.3);
+    vec3 bgColor = vec3(0.02, 0.03, 0.08) + bgGlow * vec3(0.05, 0.05, 0.15);
+
+    // ---------- 中心主星 ----------
+    // 第四步学的：用 smoothstep 画软边圆
+    // 第五步学的：sin(uTime) 做呼吸动画
+    float mainSize = 0.15 + 0.02 * sin(uTime * 0.8);
+    float mainCircle = circle(uv, vec2(0.0), mainSize, 0.01);
+
+    // 主星的光晕（大的 softness）
+    float mainGlow = circle(uv, vec2(0.0), mainSize * 1.5, 0.2);
+
+    // 主星颜色：暖橙到亮黄，随时间微微变化
+    vec3 mainColor = mix(
+      vec3(1.0, 0.6, 0.2),
+      vec3(1.0, 0.9, 0.5),
+      sin(uTime * 0.5) * 0.5 + 0.5
+    );
+
+    // ---------- 环绕的小星球 ----------
+    vec3 totalColor = bgColor;
+
+    // 先画主星的光晕（加到背景上）
+    totalColor += mainGlow * mainColor * 0.3;
+
+    // 用循环画多个小星球
+    for (int i = 0; i < NUM_CIRCLES; i++) {
+      // 每个圆的角度偏移：均匀分布在一圈上
+      float fi = float(i);
+      float angle = fi * 6.2832 / float(NUM_CIRCLES);
+
+      // 第五步学的：sin/cos 组合 = 圆形轨迹
+      // 每个圆的速度略有不同
+      float speed = 0.5 + fi * 0.15;
+      vec2 pos = vec2(
+        cos(uTime * speed + angle),
+        sin(uTime * speed + angle)
+      ) * ORBIT_RADIUS;
+
+      // 大小随时间呼吸（每个圆的相位不同）
+      float size = BASE_SIZE + 0.02 * sin(uTime * 2.0 + fi);
+
+      // 画圆 + 光晕
+      float c = circle(uv, pos, size, 0.005);
+      float glow = circle(uv, pos, size * 2.0, GLOW);
+
+      // 每个圆一个不同的颜色（用 sin 偏移产生色相差异）
+      vec3 col = vec3(
+        sin(fi * 1.0 + 0.0) * 0.5 + 0.5,
+        sin(fi * 1.0 + 2.0) * 0.5 + 0.5,
+        sin(fi * 1.0 + 4.0) * 0.5 + 0.5
+      );
+
+      // 把这个圆叠加到总颜色上
+      totalColor += c * col;
+      totalColor += glow * col * 0.2;
+    }
+
+    // 画主星本体（最后画，盖在最上面）
+    totalColor = mix(totalColor, mainColor, mainCircle);
+
+    gl_FragColor = vec4(totalColor, 1.0);
+  }
+`;
+
+// ===== WebGL 模板代码 =====
+function compile(type, src) {
+  const s = gl.createShader(type);
+  gl.shaderSource(s, src);
+  gl.compileShader(s);
+  if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+    console.error(gl.getShaderInfoLog(s));
+  }
+  return s;
+}
+
+const prog = gl.createProgram();
+gl.attachShader(prog, compile(gl.VERTEX_SHADER, vsSource));
+gl.attachShader(prog, compile(gl.FRAGMENT_SHADER, fsSource));
+gl.linkProgram(prog);
+gl.useProgram(prog);
+
+const buf = gl.createBuffer();
+gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
+const loc = gl.getAttribLocation(prog, 'aPos');
+gl.enableVertexAttribArray(loc);
+gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0);
+
+const uResLoc = gl.getUniformLocation(prog, 'uResolution');
+const uTimeLoc = gl.getUniformLocation(prog, 'uTime');
+gl.uniform2f(uResLoc, canvas.width, canvas.height);
+
+function frame(t) {
+  gl.uniform1f(uTimeLoc, t * 0.001);
+  gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>
